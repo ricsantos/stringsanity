@@ -153,8 +153,9 @@ async function run(args) {
             let comment = "UNTRANSLATED";
             
             if (translate) {
-                console.log("Translating '" + baseValue + "' to " + language + "...");
-                translatedValue = await translateText(baseValue, language, process.env.OPENAI_API_KEY);
+                let fullLanguageName = getLanguageName(language);
+                console.log("Translating '" + baseValue + "' to " + fullLanguageName + " (" + language + ")...");
+                translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY);
                 
                 if (translatedValue && translatedValue !== baseValue) {
                     console.log("Translation: '" + translatedValue + "'");
@@ -224,6 +225,50 @@ function normalizeKey(key) {
         .replace(/[\u2013\u2014]/g, "-")  // Replace em/en dashes with hyphen
         .replace(/[\u2026]/g, "...") // Replace ellipsis with three dots
         .trim();                // Remove leading/trailing whitespace
+}
+
+function getLanguageName(code) {
+    const languageMap = {
+        'ar': 'Arabic',
+        'bg': 'Bulgarian', 
+        'ca': 'Catalan',
+        'cs': 'Czech',
+        'da': 'Danish',
+        'de': 'German',
+        'el': 'Greek',
+        'en': 'English',
+        'es': 'Spanish',
+        'fi': 'Finnish',
+        'fr': 'French',
+        'he': 'Hebrew',
+        'hi': 'Hindi',
+        'hr': 'Croatian',
+        'hu': 'Hungarian',
+        'id': 'Indonesian',
+        'it': 'Italian',
+        'ja': 'Japanese',
+        'ko': 'Korean',
+        'ms': 'Malay',
+        'nb': 'Norwegian Bokmål',
+        'nl': 'Dutch',
+        'no': 'Norwegian',
+        'pl': 'Polish',
+        'pt': 'Portuguese',
+        'pt-BR': 'Portuguese (Brazil)',
+        'ro': 'Romanian',
+        'ru': 'Russian',
+        'sk': 'Slovak',
+        'sv': 'Swedish',
+        'th': 'Thai',
+        'tr': 'Turkish',
+        'uk': 'Ukrainian',
+        'vi': 'Vietnamese',
+        'zh': 'Chinese (Simplified)',
+        'zh-Hans': 'Chinese (Simplified)',
+        'zh-Hant': 'Chinese (Traditional)'
+    };
+    
+    return languageMap[code] || code;
 }
 
 async function translateText(text, targetLanguage, apiKey) {
