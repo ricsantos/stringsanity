@@ -1,0 +1,20 @@
+{
+  "name": "stringsanity",
+  "version": "1.0.0",
+  "description": "Sync Localizable.strings files across iOS projects",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "localizable",
+    "ios",
+    "strings",
+    "sync"
+  ],
+  "author": "ricsantos",
+  "license": "ISC",
+  "dependencies": {
+    "i18n-strings-files": "^2.0.0"
+  }
+}
