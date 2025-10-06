@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const fs = require('fs');
-//var StringsFile = require('strings-file');
+const OpenAI = require('openai');
 var i18nStringsFiles = require('i18n-strings-files');
 
 // https://x-team.com/blog/a-guide-to-creating-a-nodejs-command/
@@ -9,7 +9,7 @@ const [,, ...args] = process.argv
 
 run(args)
 
-function run(args) {
+async function run(args) {
     printDottedLine();
     console.log("")
     console.log("StringSanity - " + Date())
@@ -17,21 +17,37 @@ function run(args) {
     printDottedLine();
     console.log("")
 
-    if (args.length < 1 || args.length > 2) {
-        console.log("Usage: ./cli.js <project-strings-directory> [--remove-extra]");
+    if (args.length < 1 || args.length > 3) {
+        console.log("Usage: ./cli.js <project-strings-directory> [--remove-extra] [--translate]");
         console.log("Example: ./cli.js ../ios-app/Resources");
         console.log("         ./cli.js ../ios-app/Resources --remove-extra");
+        console.log("         ./cli.js ../ios-app/Resources --translate");
+        console.log("         ./cli.js ../ios-app/Resources --remove-extra --translate");
+        console.log("");
+        console.log("--translate requires OPENAI_API_KEY environment variable");
         return;
     }
 
     let projectDir = args[0];
-    let removeExtra = args.length > 1 && args[1] === '--remove-extra';
+    let removeExtra = args.includes('--remove-extra');
+    let translate = args.includes('--translate');
     
     console.log("Project strings directory: " + projectDir);
     if (removeExtra) {
         console.log("Mode: Remove extra strings not in base language");
     } else {
         console.log("Mode: Report extra strings (use --remove-extra to remove them)");
+    }
+    
+    if (translate) {
+        console.log("Translation: Enabled (using OpenAI API)");
+        if (!process.env.OPENAI_API_KEY) {
+            console.log("Error: OPENAI_API_KEY environment variable is required for translation");
+            console.log("Set it with: export OPENAI_API_KEY=your-api-key");
+            return;
+        }
+    } else {
+        console.log("Translation: Disabled (use --translate to enable)");
     }
 
     let projectDirObj = fs.readdirSync(projectDir);
@@ -133,12 +149,28 @@ function run(args) {
                 baseValue = baseData[key];
             }
             
-            console.log("Adding English value: '" + baseValue + "'");
+            let translatedValue = baseValue;
+            let comment = "UNTRANSLATED";
             
-            // Add the English value with UNTRANSLATED comment using the same structure
+            if (translate) {
+                console.log("Translating '" + baseValue + "' to " + language + "...");
+                translatedValue = await translateText(baseValue, language, process.env.OPENAI_API_KEY);
+                
+                if (translatedValue && translatedValue !== baseValue) {
+                    console.log("Translation: '" + translatedValue + "'");
+                    comment = "TRANSLATED";
+                } else {
+                    console.log("Translation failed, using English value");
+                    translatedValue = baseValue;
+                }
+            } else {
+                console.log("Adding English value: '" + baseValue + "'");
+            }
+            
+            // Add the translated or English value
             langData[key] = {
-                text: baseValue,
-                comment: "UNTRANSLATED"
+                text: translatedValue,
+                comment: comment
             };
             addedStringCount += 1;
         }
@@ -182,6 +214,43 @@ function run(args) {
     console.log("")
     console.log("")
     printDottedLine();   
+}
+
+function normalizeKey(key) {
+    // Normalize common Unicode variations to standard ASCII
+    return key
+        .replace(/['']/g, "'")  // Replace curly apostrophes with straight apostrophe
+        .replace(/[""]/g, '"')  // Replace curly quotes with straight quotes
+        .replace(/[\u2013\u2014]/g, "-")  // Replace em/en dashes with hyphen
+        .replace(/[\u2026]/g, "...") // Replace ellipsis with three dots
+        .trim();                // Remove leading/trailing whitespace
+}
+
+async function translateText(text, targetLanguage, apiKey) {
+    const openai = new OpenAI({ apiKey: apiKey });
+    
+    try {
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                {
+                    role: "system",
+                    content: `You are a professional translator. Translate the given text to ${targetLanguage}. Keep the same tone, style, and formatting. For iOS/mobile app strings, maintain technical accuracy and appropriate length for UI elements. Return only the translated text, nothing else.`
+                },
+                {
+                    role: "user",
+                    content: text
+                }
+            ],
+            max_tokens: 500,
+            temperature: 0.3
+        });
+        
+        return response.choices[0].message.content.trim();
+    } catch (error) {
+        console.log("Translation error:", error.message);
+        return null;
+    }
 }
 
 function printDottedLine() {

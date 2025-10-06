@@ -15,6 +15,7 @@
   "author": "ricsantos",
   "license": "ISC",
   "dependencies": {
-    "i18n-strings-files": "^2.0.0"
+    "i18n-strings-files": "^2.0.0",
+    "openai": "^6.1.0"
   }
 }
