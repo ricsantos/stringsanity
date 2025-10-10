@@ -159,7 +159,7 @@ async function run(args) {
                 
                 if (translatedValue && translatedValue !== baseValue) {
                     console.log("Translation: '" + translatedValue + "'");
-                    comment = "TRANSLATED";
+                    comment = "Translated by Stringsanity";
                 } else {
                     console.log("Translation failed, using English value");
                     translatedValue = baseValue;
