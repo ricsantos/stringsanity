@@ -143,19 +143,24 @@ async function run(args) {
             
             // Extract the base value - the library uses 'text' property, not 'value'
             let baseValue;
+            let originalComment;
             if (typeof baseData[key] === 'object') {
                 baseValue = baseData[key].text || baseData[key].value || baseData[key];
+                originalComment = baseData[key].comment;
             } else {
                 baseValue = baseData[key];
+                originalComment = undefined;
             }
-            
+
+            console.log("Original comment for key '" + key + "':", originalComment);
+
             let translatedValue = baseValue;
             let comment = "UNTRANSLATED";
-            
+
             if (translate) {
                 let fullLanguageName = getLanguageName(language);
                 console.log("Translating '" + baseValue + "' to " + fullLanguageName + " (" + language + ")...");
-                translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY);
+                translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY, originalComment);
                 
                 if (translatedValue && translatedValue !== baseValue) {
                     console.log("Translation: '" + translatedValue + "'");
@@ -271,26 +276,33 @@ function getLanguageName(code) {
     return languageMap[code] || code;
 }
 
-async function translateText(text, targetLanguage, apiKey) {
+async function translateText(text, targetLanguage, apiKey, context) {
     const openai = new OpenAI({ apiKey: apiKey });
-    
+
     try {
+        let systemPrompt = `You are a professional translator. Translate the given text to ${targetLanguage}. Keep the same tone, style, and formatting. For iOS/mobile app strings, maintain technical accuracy and appropriate length for UI elements. Return only the translated text, nothing else.`;
+
+        let userContent = text;
+        if (context && context.trim().length > 0) {
+            userContent = `Context: ${context}\n\nText to translate: ${text}`;
+        }
+
         const response = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
                 {
                     role: "system",
-                    content: `You are a professional translator. Translate the given text to ${targetLanguage}. Keep the same tone, style, and formatting. For iOS/mobile app strings, maintain technical accuracy and appropriate length for UI elements. Return only the translated text, nothing else.`
+                    content: systemPrompt
                 },
                 {
                     role: "user",
-                    content: text
+                    content: userContent
                 }
             ],
             max_tokens: 500,
             temperature: 0.3
         });
-        
+
         return response.choices[0].message.content.trim();
     } catch (error) {
         console.log("Translation error:", error.message);
