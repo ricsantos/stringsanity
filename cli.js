@@ -161,12 +161,18 @@ async function run(args) {
                 let fullLanguageName = getLanguageName(language);
                 console.log("Translating '" + baseValue + "' to " + fullLanguageName + " (" + language + ")...");
                 translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY, originalComment);
-                
+
+                console.log("Translation result: '" + translatedValue + "'");
+
                 if (translatedValue && translatedValue !== baseValue) {
-                    console.log("Translation: '" + translatedValue + "'");
+                    console.log("✓ Translation succeeded (differs from English)");
                     comment = "Translated by Stringsanity";
+                } else if (!translatedValue) {
+                    console.log("✗ Translation API returned null/empty");
+                    translatedValue = baseValue;
                 } else {
-                    console.log("Translation failed, using English value");
+                    console.log("✓ Translation matches English value (universal term, no translation needed)");
+                    comment = "Translated by Stringsanity";
                     translatedValue = baseValue;
                 }
             } else {
