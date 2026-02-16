@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+require('dotenv').config();
 const fs = require('fs');
 const OpenAI = require('openai');
 var i18nStringsFiles = require('i18n-strings-files');
