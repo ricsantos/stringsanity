@@ -18,28 +18,40 @@ async function run(args) {
     printDottedLine();
     console.log("")
 
-    if (args.length < 1 || args.length > 3) {
-        console.log("Usage: ./cli.js <project-strings-directory> [--remove-extra] [--translate]");
+    if (args.length < 1) {
+        console.log("Usage: ./cli.js <project-strings-directory> [--remove-extra] [--translate] [--language <code>]");
         console.log("Example: ./cli.js ../ios-app/Resources");
         console.log("         ./cli.js ../ios-app/Resources --remove-extra");
         console.log("         ./cli.js ../ios-app/Resources --translate");
         console.log("         ./cli.js ../ios-app/Resources --remove-extra --translate");
+        console.log("         ./cli.js ../ios-app/Resources --translate --language fr");
         console.log("");
         console.log("--translate requires OPENAI_API_KEY environment variable");
+        console.log("--language <code> restricts processing to a single .lproj (e.g. fr, de, zh-Hans)");
         return;
     }
 
     let projectDir = args[0];
     let removeExtra = args.includes('--remove-extra');
     let translate = args.includes('--translate');
-    
+    let languageIndex = args.indexOf('--language');
+    let languageFilter = languageIndex >= 0 ? args[languageIndex + 1] : null;
+    if (languageIndex >= 0 && !languageFilter) {
+        console.log("Error: --language requires a language code (e.g. --language fr)");
+        return;
+    }
+
     console.log("Project strings directory: " + projectDir);
     if (removeExtra) {
         console.log("Mode: Remove extra strings not in base language");
     } else {
         console.log("Mode: Report extra strings (use --remove-extra to remove them)");
     }
-    
+
+    if (languageFilter) {
+        console.log("Language filter: only processing '" + languageFilter + "'");
+    }
+
     if (translate) {
         console.log("Translation: Enabled (using OpenAI API)");
         if (!process.env.OPENAI_API_KEY) {
@@ -91,6 +103,7 @@ async function run(args) {
         if (folderName == "Base.lproj" || folderName == "en.lproj") { continue }
 
         let language = folderName.replace(".lproj", "")
+        if (languageFilter && language !== languageFilter) { continue }
         console.log("");
         console.log("Processing language: " + language);
 
@@ -218,6 +231,9 @@ async function run(args) {
     console.log("")
     console.log("Completed!")
     console.log("Processed " + processedCount + " languages");
+    if (languageFilter && processedCount === 0) {
+        console.log("WARNING: ⚠️ no .lproj folder matched --language '" + languageFilter + "'");
+    }
     if (totalAddedStrings > 0) {
         console.log("Added " + totalAddedStrings + " untranslated strings across all languages");
         console.log("These strings are marked with 'UNTRANSLATED' comments and need translation.");
