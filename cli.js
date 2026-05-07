@@ -19,21 +19,24 @@ async function run(args) {
     console.log("")
 
     if (args.length < 1) {
-        console.log("Usage: ./cli.js <project-strings-directory> [--remove-extra] [--translate] [--language <code>]");
+        console.log("Usage: ./cli.js <project-strings-directory> [--remove-extra] [--translate] [--language <code>] [--no-comment]");
         console.log("Example: ./cli.js ../ios-app/Resources");
         console.log("         ./cli.js ../ios-app/Resources --remove-extra");
         console.log("         ./cli.js ../ios-app/Resources --translate");
         console.log("         ./cli.js ../ios-app/Resources --remove-extra --translate");
         console.log("         ./cli.js ../ios-app/Resources --translate --language fr");
+        console.log("         ./cli.js ../ios-app/Resources --translate --no-comment");
         console.log("");
         console.log("--translate requires OPENAI_API_KEY environment variable");
         console.log("--language <code> restricts processing to a single .lproj (e.g. fr, de, zh-Hans)");
+        console.log("--no-comment skips writing 'UNTRANSLATED' / 'Translated by Stringsanity' comments on new entries");
         return;
     }
 
     let projectDir = args[0];
     let removeExtra = args.includes('--remove-extra');
     let translate = args.includes('--translate');
+    let noComment = args.includes('--no-comment');
     let languageIndex = args.indexOf('--language');
     let languageFilter = languageIndex >= 0 ? args[languageIndex + 1] : null;
     if (languageIndex >= 0 && !languageFilter) {
@@ -50,6 +53,10 @@ async function run(args) {
 
     if (languageFilter) {
         console.log("Language filter: only processing '" + languageFilter + "'");
+    }
+
+    if (noComment) {
+        console.log("Comments: Disabled (no comments will be written for new entries)");
     }
 
     if (translate) {
@@ -194,10 +201,14 @@ async function run(args) {
             }
             
             // Add the translated or English value
-            langData[key] = {
-                text: translatedValue,
-                comment: comment
-            };
+            if (noComment) {
+                langData[key] = { text: translatedValue };
+            } else {
+                langData[key] = {
+                    text: translatedValue,
+                    comment: comment
+                };
+            }
             addedStringCount += 1;
         }
 
