@@ -322,7 +322,7 @@ async function translateText(text, targetLanguage, apiKey, context) {
         }
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-5.4",
             messages: [
                 {
                     role: "system",
@@ -333,7 +333,7 @@ async function translateText(text, targetLanguage, apiKey, context) {
                     content: userContent
                 }
             ],
-            max_tokens: 500,
+            max_completion_tokens: 500,
             temperature: 0.3
         });
 
