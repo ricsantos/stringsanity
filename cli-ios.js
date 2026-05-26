@@ -19,13 +19,13 @@ async function run(args) {
     console.log("")
 
     if (args.length < 1) {
-        console.log("Usage: ./cli.js <project-strings-directory> [--remove-extra] [--translate] [--language <code>] [--no-comment]");
-        console.log("Example: ./cli.js ../ios-app/Resources");
-        console.log("         ./cli.js ../ios-app/Resources --remove-extra");
-        console.log("         ./cli.js ../ios-app/Resources --translate");
-        console.log("         ./cli.js ../ios-app/Resources --remove-extra --translate");
-        console.log("         ./cli.js ../ios-app/Resources --translate --language fr");
-        console.log("         ./cli.js ../ios-app/Resources --translate --no-comment");
+        console.log("Usage: ./cli-ios.js <project-strings-directory> [--remove-extra] [--translate] [--language <code>] [--no-comment]");
+        console.log("Example: ./cli-ios.js ../ios-app/Resources");
+        console.log("         ./cli-ios.js ../ios-app/Resources --remove-extra");
+        console.log("         ./cli-ios.js ../ios-app/Resources --translate");
+        console.log("         ./cli-ios.js ../ios-app/Resources --remove-extra --translate");
+        console.log("         ./cli-ios.js ../ios-app/Resources --translate --language fr");
+        console.log("         ./cli-ios.js ../ios-app/Resources --translate --no-comment");
         console.log("");
         console.log("--translate requires OPENAI_API_KEY environment variable");
         console.log("--language <code> restricts processing to a single .lproj (e.g. fr, de, zh-Hans)");

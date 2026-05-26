@@ -11,30 +11,30 @@ npm install
 ### Usage
 
 ```bash
-./cli.js <path-to-project-strings-directory> [--remove-extra] [--translate]
+./cli-ios.js <path-to-project-strings-directory> [--remove-extra] [--translate]
 ```
 
 ### Examples
 
 Basic sync (adds missing strings with English values):
 ```bash
-./cli.js ../ios-app/Resources
+./cli-ios.js ../ios-app/Resources
 ```
 
 Remove extra strings not in base language:
 ```bash
-./cli.js ../ios-app/Resources --remove-extra
+./cli-ios.js ../ios-app/Resources --remove-extra
 ```
 
 AI-powered translation using OpenAI:
 ```bash
 export OPENAI_API_KEY=your-api-key
-./cli.js ../ios-app/Resources --translate
+./cli-ios.js ../ios-app/Resources --translate
 ```
 
 Combined (translate missing + remove extra):
 ```bash
-./cli.js ../ios-app/Resources --remove-extra --translate
+./cli-ios.js ../ios-app/Resources --remove-extra --translate
 ```
 
 ### Features
