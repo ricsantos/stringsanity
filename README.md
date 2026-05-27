@@ -159,3 +159,25 @@ Behavior notes:
 
 - Node.js
 - OpenAI API key (only required when using `--translate`)
+
+---
+
+### Claude Code skill
+
+This repo ships a [`SKILL.md`](./SKILL.md) so [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) can drive the CLIs for you (picking the right one, choosing flags, respecting guardrails around `--translate` and `--remove-extra`).
+
+Install it once at the user level so it's available in every project:
+
+```bash
+mkdir -p ~/.claude/skills/stringsanity
+cp SKILL.md ~/.claude/skills/stringsanity/SKILL.md
+```
+
+Or install it per-project (only loads when Claude runs inside that repo):
+
+```bash
+mkdir -p <your-project>/.claude/skills/stringsanity
+cp SKILL.md <your-project>/.claude/skills/stringsanity/SKILL.md
+```
+
+Then in Claude Code, asks like *"sync the French translations in ./ios/Resources"* will auto-load the skill. You can also invoke it explicitly with `/stringsanity`.
