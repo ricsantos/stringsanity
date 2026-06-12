@@ -11,7 +11,7 @@ Pick the CLI matching the **target project's** locale layout. The examples below
 
 | CLI | Platform | Locale layout |
 | --- | --- | --- |
-| `<stringsanity>/cli-ios.js` | iOS | `Base.lproj/Localizable.strings` (falls back to `en.lproj/`), peers in `<lang>.lproj/` |
+| `<stringsanity>/cli-ios.js` | iOS | every `Base.lproj/*.strings` (e.g. `Localizable.strings`, `InfoPlist.strings`; falls back to `en.lproj/`), peers in `<lang>.lproj/` |
 | `<stringsanity>/cli-android.js` | Android | `values/strings.xml` (base), peers in `values-<lang>/strings.xml` |
 | `<stringsanity>/cli-react.js` | React / i18next | `<bcp47-tag>/<namespace>.json` (base defaults to `en-US`, falls back to `en`) |
 

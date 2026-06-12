@@ -90,158 +90,175 @@ async function run(args) {
     }
     
     console.log("Base dir contents: " + JSON.stringify(baseDirObj, null, 2));
-    // Use standard Localizable.strings filename
-    let stringsFilename = "Localizable.strings";
-    console.log("Strings filename: " + stringsFilename);
-    let baseStringsPath = baseDir + "/" + stringsFilename
-    console.log("Base strings path: " + baseStringsPath);
-
-    // Read the base strings file to get the canonical list of all strings
-    let baseData = i18nStringsFiles.readFileSync(baseStringsPath, { 'encoding': 'UTF-8', 'wantsComments': true });
-    let baseKeys = Object.keys(baseData).sort(); // Sort alphabetically
-    console.log("Base language has " + baseKeys.length + " keys");
+    // Process every .strings file found in the base lproj (e.g. Localizable.strings, InfoPlist.strings)
+    let stringsFilenames = baseDirObj.filter(name => name.endsWith(".strings")).sort();
+    if (stringsFilenames.length == 0) {
+        console.log("Error: no .strings files found in " + baseDir);
+        return;
+    }
+    console.log("Strings files: " + stringsFilenames.join(", "));
 
     var processedCount = 0;
     var totalAddedStrings = 0;
+    let processedLanguages = new Set();
 
-    for (let i = 0; i < projectDirObj.length; i++) {
-        let folderName = projectDirObj[i];
-        if (folderName.endsWith(".lproj") == false) { continue }
-        if (folderName == "Base.lproj" || folderName == "en.lproj") { continue }
-
-        let language = folderName.replace(".lproj", "")
-        if (languageFilter && language !== languageFilter) { continue }
+    for (let f = 0; f < stringsFilenames.length; f++) {
+        let stringsFilename = stringsFilenames[f];
         console.log("");
-        console.log("Processing language: " + language);
+        printDottedLine();
+        console.log("Strings filename: " + stringsFilename);
+        let baseStringsPath = baseDir + "/" + stringsFilename
+        console.log("Base strings path: " + baseStringsPath);
 
-        let langStringsPath = projectDir + "/" + folderName + "/" + stringsFilename;
-        console.log("Language strings path: " + langStringsPath);
-        
-        let langData = {};
-        try {
-            langData = i18nStringsFiles.readFileSync(langStringsPath, { 'encoding': 'UTF-8', 'wantsComments': true });
-        } catch (err) {
-            console.log("Warning: unable to read " + language + " strings file, skipping");
-            continue;
-        }
+        // Read the base strings file to get the canonical list of all strings
+        let baseData = i18nStringsFiles.readFileSync(baseStringsPath, { 'encoding': 'UTF-8', 'wantsComments': true });
+        let baseKeys = Object.keys(baseData).sort(); // Sort alphabetically
+        console.log("Base language has " + baseKeys.length + " keys");
 
-        var addedStringCount = 0;
-        var extraStringCount = 0;
-        
-        // Check for extra strings that exist in this language but not in base
-        let langKeys = Object.keys(langData);
-        let extraKeys = [];
-        for (let k = 0; k < langKeys.length; k++) {
-            let langKey = langKeys[k];
-            if (!baseKeys.includes(langKey)) {
-                extraKeys.push(langKey);
-                extraStringCount++;
-            }
-        }
-        
-        if (extraKeys.length > 0) {
-            console.log("Found " + extraKeys.length + " extra strings not in base language:");
-            extraKeys.forEach(key => {
-                console.log("  - " + key);
-                if (removeExtra) {
-                    delete langData[key];
+        for (let i = 0; i < projectDirObj.length; i++) {
+            let folderName = projectDirObj[i];
+            if (folderName.endsWith(".lproj") == false) { continue }
+            if (folderName == "Base.lproj" || folderName == "en.lproj") { continue }
+
+            let language = folderName.replace(".lproj", "")
+            if (languageFilter && language !== languageFilter) { continue }
+            console.log("");
+            console.log("Processing language: " + language);
+
+            let langStringsPath = projectDir + "/" + folderName + "/" + stringsFilename;
+            console.log("Language strings path: " + langStringsPath);
+
+            let langData = {};
+            if (fs.existsSync(langStringsPath)) {
+                try {
+                    langData = i18nStringsFiles.readFileSync(langStringsPath, { 'encoding': 'UTF-8', 'wantsComments': true });
+                } catch (err) {
+                    console.log("Warning: unable to read " + language + " " + stringsFilename + ", skipping");
+                    continue;
                 }
+            } else {
+                console.log("File does not exist yet, will create it");
+            }
+
+            var addedStringCount = 0;
+            var extraStringCount = 0;
+
+            // Check for extra strings that exist in this language but not in base
+            let langKeys = Object.keys(langData);
+            let extraKeys = [];
+            for (let k = 0; k < langKeys.length; k++) {
+                let langKey = langKeys[k];
+                if (!baseKeys.includes(langKey)) {
+                    extraKeys.push(langKey);
+                    extraStringCount++;
+                }
+            }
+            
+            if (extraKeys.length > 0) {
+                console.log("Found " + extraKeys.length + " extra strings not in base language:");
+                extraKeys.forEach(key => {
+                    console.log("  - " + key);
+                    if (removeExtra) {
+                        delete langData[key];
+                    }
+                });
+                
+                if (removeExtra) {
+                    console.log("Removed " + extraKeys.length + " extra strings");
+                } else {
+                    console.log("Use --remove-extra flag to remove these strings");
+                }
+            }
+
+            for (let j = 0; j < baseKeys.length; j++) {
+                let key = baseKeys[j];
+                let langValue = langData[key];
+                if (langValue != null) { continue }
+                
+                console.log("Missing translation for key: " + key);
+                
+                // Extract the base value - the library uses 'text' property, not 'value'
+                let baseValue;
+                let originalComment;
+                if (typeof baseData[key] === 'object') {
+                    baseValue = baseData[key].text || baseData[key].value || baseData[key];
+                    originalComment = baseData[key].comment;
+                } else {
+                    baseValue = baseData[key];
+                    originalComment = undefined;
+                }
+
+                console.log("Original comment for key '" + key + "':", originalComment);
+
+                let translatedValue = baseValue;
+                let comment = "UNTRANSLATED";
+
+                if (translate) {
+                    let fullLanguageName = getLanguageName(language);
+                    console.log("Translating '" + baseValue + "' to " + fullLanguageName + " (" + language + ")...");
+                    translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY, originalComment);
+
+                    console.log("Translation result: '" + translatedValue + "'");
+
+                    if (translatedValue && translatedValue !== baseValue) {
+                        console.log("✓ Translation succeeded (differs from English)");
+                        comment = "Translated by Stringsanity";
+                    } else if (!translatedValue) {
+                        console.log("✗ Translation API returned null/empty");
+                        translatedValue = baseValue;
+                    } else {
+                        console.log("✓ Translation matches English value (universal term, no translation needed)");
+                        comment = "Translated by Stringsanity";
+                        translatedValue = baseValue;
+                    }
+                } else {
+                    console.log("Adding English value: '" + baseValue + "'");
+                }
+                
+                // Add the translated or English value
+                if (noComment) {
+                    langData[key] = { text: translatedValue };
+                } else {
+                    langData[key] = {
+                        text: translatedValue,
+                        comment: comment
+                    };
+                }
+                addedStringCount += 1;
+            }
+
+            // Always sort and rewrite the file to ensure alphabetical order
+            let sortedLangData = {};
+            Object.keys(langData).sort().forEach(key => {
+                sortedLangData[key] = langData[key];
             });
             
-            if (removeExtra) {
-                console.log("Removed " + extraKeys.length + " extra strings");
-            } else {
-                console.log("Use --remove-extra flag to remove these strings");
-            }
-        }
-
-        for (let j = 0; j < baseKeys.length; j++) {
-            let key = baseKeys[j];
-            let langValue = langData[key];
-            if (langValue != null) { continue }
-            
-            console.log("Missing translation for key: " + key);
-            
-            // Extract the base value - the library uses 'text' property, not 'value'
-            let baseValue;
-            let originalComment;
-            if (typeof baseData[key] === 'object') {
-                baseValue = baseData[key].text || baseData[key].value || baseData[key];
-                originalComment = baseData[key].comment;
-            } else {
-                baseValue = baseData[key];
-                originalComment = undefined;
+            if (addedStringCount > 0) {
+                console.log("Added " + addedStringCount + " untranslated strings for language " + language + " (" + stringsFilename + ")");
+                totalAddedStrings += addedStringCount;
             }
 
-            console.log("Original comment for key '" + key + "':", originalComment);
+            // Write the sorted file (always rewrite to maintain alphabetical order)
+            i18nStringsFiles.writeFileSync(langStringsPath, sortedLangData, { 'encoding': 'UTF-8', 'wantsComments': true });
 
-            let translatedValue = baseValue;
-            let comment = "UNTRANSLATED";
-
-            if (translate) {
-                let fullLanguageName = getLanguageName(language);
-                console.log("Translating '" + baseValue + "' to " + fullLanguageName + " (" + language + ")...");
-                translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY, originalComment);
-
-                console.log("Translation result: '" + translatedValue + "'");
-
-                if (translatedValue && translatedValue !== baseValue) {
-                    console.log("✓ Translation succeeded (differs from English)");
-                    comment = "Translated by Stringsanity";
-                } else if (!translatedValue) {
-                    console.log("✗ Translation API returned null/empty");
-                    translatedValue = baseValue;
-                } else {
-                    console.log("✓ Translation matches English value (universal term, no translation needed)");
-                    comment = "Translated by Stringsanity";
-                    translatedValue = baseValue;
-                }
+            let updatedLangKeys = Object.keys(langData);
+            if (updatedLangKeys.length == baseKeys.length) {
+                console.log("✓ Language " + language + " now has all " + baseKeys.length + " strings in " + stringsFilename);
+            } else if (updatedLangKeys.length > baseKeys.length) {
+                console.log("WARNING: ⚠️ language " + language + " has " + updatedLangKeys.length + "/" + baseKeys.length + " strings in " + stringsFilename + " (" + extraStringCount + " extra)");
             } else {
-                console.log("Adding English value: '" + baseValue + "'");
+                console.log("WARNING: ⚠️ language " + language + " has " + updatedLangKeys.length + "/" + baseKeys.length + " strings in " + stringsFilename + " (missing " + (baseKeys.length - updatedLangKeys.length) + ")");
             }
-            
-            // Add the translated or English value
-            if (noComment) {
-                langData[key] = { text: translatedValue };
-            } else {
-                langData[key] = {
-                    text: translatedValue,
-                    comment: comment
-                };
-            }
-            addedStringCount += 1;
-        }
 
-        // Always sort and rewrite the file to ensure alphabetical order
-        let sortedLangData = {};
-        Object.keys(langData).sort().forEach(key => {
-            sortedLangData[key] = langData[key];
-        });
-        
-        if (addedStringCount > 0) {
-            console.log("Added " + addedStringCount + " untranslated strings for language " + language);
-            totalAddedStrings += addedStringCount;
+            processedLanguages.add(language);
+            processedCount += 1;
         }
-        
-        // Write the sorted file (always rewrite to maintain alphabetical order)
-        i18nStringsFiles.writeFileSync(langStringsPath, sortedLangData, { 'encoding': 'UTF-8', 'wantsComments': true });
-        
-        let updatedLangKeys = Object.keys(langData);
-        if (updatedLangKeys.length == baseKeys.length) {
-            console.log("✓ Language " + language + " now has all " + baseKeys.length + " strings");
-        } else if (updatedLangKeys.length > baseKeys.length) {
-            console.log("WARNING: ⚠️ language " + language + " has " + updatedLangKeys.length + "/" + baseKeys.length + " strings (" + extraStringCount + " extra)");
-        } else {
-            console.log("WARNING: ⚠️ language " + language + " has " + updatedLangKeys.length + "/" + baseKeys.length + " strings (missing " + (baseKeys.length - updatedLangKeys.length) + ")");
-        }
-
-        processedCount += 1;
     }
 
     console.log("")
     console.log("")
     console.log("Completed!")
-    console.log("Processed " + processedCount + " languages");
+    console.log("Processed " + processedLanguages.size + " languages across " + stringsFilenames.length + " strings files");
     if (languageFilter && processedCount === 0) {
         console.log("WARNING: ⚠️ no .lproj folder matched --language '" + languageFilter + "'");
     }

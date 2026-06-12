@@ -4,7 +4,7 @@ Keeps localized string files for **iOS**, **Android**, and **React / i18next** p
 
 Each platform has its own CLI that understands the conventions of that platform's locale layout:
 
-- **iOS** — `cli-ios.js` — `.lproj/Localizable.strings`
+- **iOS** — `cli-ios.js` — `.lproj/*.strings` (e.g. `Localizable.strings`, `InfoPlist.strings`)
 - **Android** — `cli-android.js` — `values-<lang>/strings.xml`
 - **React / i18next** — `cli-react.js` — `<lang>/<namespace>.json`
 
@@ -33,10 +33,13 @@ Layout expected:
 ```
 Resources/
   Base.lproj/Localizable.strings   (or en.lproj)
+  Base.lproj/InfoPlist.strings     (any other .strings files are picked up too)
   fr.lproj/Localizable.strings
   de.lproj/Localizable.strings
   ...
 ```
+
+Every `.strings` file in the base lproj is processed; a language missing one of them (e.g. no `fr.lproj/InfoPlist.strings` yet) gets the file created.
 
 Examples:
 
