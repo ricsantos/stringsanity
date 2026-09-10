@@ -24,6 +24,24 @@ All three CLIs share the same vocabulary:
 | `--remove-extra` | Delete keys present in a translated file but missing from the base |
 | `--language <code>` | Restrict processing to a single locale folder |
 
+Prefer not to remember flags? See **Interactive mode** below.
+
+---
+
+### Interactive mode — `stringsanity.js`
+
+If you run the tools often, skip the flags and let the wizard ask:
+
+```bash
+./stringsanity.js        # or: npm start
+```
+
+It asks, in order: **platform** (ios / android / react), **project** (a saved one, or paste a new path), **options** (checkboxes, with your last choices preselected), and **OpenAI key** (only if `--translate` is on). It then prints the exact `cli-*.js` command and runs it.
+
+- Saved projects and their default flags live in `projects.json` (git-ignored). A pasted path is saved under a name you choose, and the last-used project is preselected next time, so a repeat run is four presses of Enter.
+- Keys are listed from every `OPENAI_API_KEY_<NAME>=sk-...` line in `.env`, e.g. `OPENAI_API_KEY_FOOBAR` and `OPENAI_API_KEY_BURLEIGH`. The wizard exports the chosen one as `OPENAI_API_KEY` for the child process; the CLIs themselves are unchanged. If no named keys exist it falls back to the plain `OPENAI_API_KEY`.
+- `--remove-extra` always asks for confirmation before running.
+
 ---
 
 ### iOS — `cli-ios.js`

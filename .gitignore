@@ -63,3 +63,5 @@ jspm_packages/
 
 # macOS
 .DS_Store
+# StringSanity wizard state (project paths + last run)
+projects.json

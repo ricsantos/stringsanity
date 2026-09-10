@@ -4,7 +4,8 @@
   "description": "Sync Localizable.strings files across iOS projects",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node stringsanity.js"
   },
   "keywords": [
     "localizable",
@@ -15,8 +16,12 @@
   "author": "ricsantos",
   "license": "ISC",
   "dependencies": {
+    "@inquirer/prompts": "^8.7.2",
     "dotenv": "^17.3.1",
     "i18n-strings-files": "^2.0.0",
     "openai": "^6.1.0"
+  },
+  "bin": {
+    "stringsanity": "./stringsanity.js"
   }
 }

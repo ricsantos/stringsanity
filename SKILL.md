@@ -15,6 +15,10 @@ Pick the CLI matching the **target project's** locale layout. The examples below
 | `<stringsanity>/cli-android.js` | Android | `values/strings.xml` (base), peers in `values-<lang>/strings.xml` |
 | `<stringsanity>/cli-react.js` | React / i18next | `<bcp47-tag>/<namespace>.json` (base defaults to `en-US`, falls back to `en`) |
 
+## Interactive wizard
+
+`<stringsanity>/stringsanity.js` is a prompt-driven front end for humans (platform → project → options → key). It needs a TTY, so **do not run it from Claude Code**; call the `cli-*.js` scripts directly instead. Its state file `projects.json` (git-ignored) lists the user's saved projects with `name`, `platform`, `path`, `key` and `defaults`, which is a useful hint for which directory and flags the user normally uses. Named keys live in `.env` as `OPENAI_API_KEY_<NAME>`; to use one directly, run `OPENAI_API_KEY=$OPENAI_API_KEY_<NAME> <stringsanity>/cli-ios.js ...`.
+
 ## Picking the right CLI
 
 Look inside the user's target locale directory:
