@@ -8,7 +8,12 @@ var i18nStringsFiles = require('i18n-strings-files');
 
 const [,, ...args] = process.argv
 
-run(args)
+run(args).catch(error => {
+    console.log("");
+    console.log("✗ " + error.message);
+    console.log("Stopped. The file in progress was not written. Fix the problem and run again.");
+    process.exitCode = 1;
+});
 
 async function run(args) {
     printDottedLine();
@@ -380,8 +385,8 @@ async function translateText(text, targetLanguage, apiKey, context, appContext) 
         let trailing = text.match(/\s*$/)[0];
         return leading + response.choices[0].message.content.trim() + trailing;
     } catch (error) {
-        console.log("Translation error:", error.message);
-        return null;
+        // Stop the whole run: falling back to English would write a file full of UNTRANSLATED entries
+        throw new Error("Translation failed: " + error.message);
     }
 }
 

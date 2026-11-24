@@ -67,6 +67,7 @@ export OPENAI_API_KEY=sk-...
 - iOS output is sorted alphabetically. Android keeps the existing file order and appends new entries (in key order) just before `</resources>`. React preserves the base file's **insertion order** so nested groups stay readable.
 - React translator preserves i18next placeholders (`{{name}}`) and ICU plural/select syntax verbatim, and passes region-aware language hints (e.g. `en-US` vs `en-GB`, `zh-Hans` vs `zh-Hant`).
 - Android skips strings marked `translatable="false"`.
+- With `--translate`, the first OpenAI error (bad key, quota, network) stops the run and exits 1. The file in progress is not written; files finished earlier in the run keep their successful translations.
 - iOS marks new entries with `/* UNTRANSLATED */` or `/* Translated by Stringsanity */` unless `--no-comment` is passed. JSON has no comments, so React reports status to stdout only.
 
 ## Guardrails

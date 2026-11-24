@@ -83,6 +83,7 @@ Extra flags:
 Output:
 - Without `--translate`: missing strings are marked `/* UNTRANSLATED */`.
 - With `--translate`: translated strings are marked `/* Translated by Stringsanity */`.
+- With `--translate`: if an OpenAI call fails (bad API key, quota, network), the run stops before it writes the file in progress. It does not fall back to English.
 - All files are sorted alphabetically.
 
 ---

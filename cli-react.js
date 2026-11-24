@@ -6,7 +6,12 @@ const OpenAI = require('openai');
 
 const [,, ...args] = process.argv;
 
-run(args)
+run(args).catch(error => {
+    console.log("");
+    console.log("✗ " + error.message);
+    console.log("Stopped. The file in progress was not written. Fix the problem and run again.");
+    process.exitCode = 1;
+});
 
 async function run(args) {
     printDottedLine();
@@ -406,8 +411,8 @@ async function translateText(text, targetLanguage, apiKey, context) {
 
         return response.choices[0].message.content.trim();
     } catch (error) {
-        console.log("    Translation error:", error.message);
-        return null;
+        // Stop the whole run: falling back to English would write a file full of UNTRANSLATED entries
+        throw new Error("Translation failed: " + error.message);
     }
 }
 
