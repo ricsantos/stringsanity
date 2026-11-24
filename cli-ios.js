@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 require('dotenv').config();
 const fs = require('fs');
-const OpenAI = require('openai');
+const { translateMany, isStopped } = require('./translate');
 var i18nStringsFiles = require('i18n-strings-files');
 
 // https://x-team.com/blog/a-guide-to-creating-a-nodejs-command/
@@ -11,7 +11,7 @@ const [,, ...args] = process.argv
 run(args).catch(error => {
     console.log("");
     console.log("✗ " + error.message);
-    console.log("Stopped. The file in progress was not written. Fix the problem and run again.");
+    console.log("Stopped. Files still waiting for translations were not written. Fix the problem and run again.");
     process.exitCode = 1;
 });
 
@@ -120,6 +120,8 @@ async function run(args) {
     var totalAddedStrings = 0;
     let processedLanguages = new Set();
 
+    // Pass 1: read every (strings file, language) pair and list its missing keys
+    let jobs = [];
     for (let f = 0; f < stringsFilenames.length; f++) {
         let stringsFilename = stringsFilenames[f];
         console.log("");
@@ -158,20 +160,8 @@ async function run(args) {
                 console.log("File does not exist yet, will create it");
             }
 
-            var addedStringCount = 0;
-            var extraStringCount = 0;
-
             // Check for extra strings that exist in this language but not in base
-            let langKeys = Object.keys(langData);
-            let extraKeys = [];
-            for (let k = 0; k < langKeys.length; k++) {
-                let langKey = langKeys[k];
-                if (!baseKeys.includes(langKey)) {
-                    extraKeys.push(langKey);
-                    extraStringCount++;
-                }
-            }
-            
+            let extraKeys = Object.keys(langData).filter(key => !baseKeys.includes(key));
             if (extraKeys.length > 0) {
                 console.log("Found " + extraKeys.length + " extra strings not in base language:");
                 extraKeys.forEach(key => {
@@ -188,13 +178,11 @@ async function run(args) {
                 }
             }
 
-            for (let j = 0; j < baseKeys.length; j++) {
-                let key = baseKeys[j];
-                let langValue = langData[key];
-                if (langValue != null) { continue }
-                
+            let missing = [];
+            for (let key of baseKeys) {
+                if (langData[key] != null) { continue }
                 console.log("Missing translation for key: " + key);
-                
+
                 // Extract the base value - the library uses 'text' property, not 'value'
                 let baseValue;
                 let originalComment;
@@ -205,72 +193,90 @@ async function run(args) {
                     baseValue = baseData[key];
                     originalComment = undefined;
                 }
-
-                console.log("Original comment for key '" + key + "':", originalComment);
-
-                let translatedValue = baseValue;
-                let comment = "UNTRANSLATED";
-
-                if (translate) {
-                    let fullLanguageName = getLanguageName(language);
-                    console.log("Translating '" + baseValue + "' to " + fullLanguageName + " (" + language + ")...");
-                    translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY, originalComment, appContext);
-
-                    console.log("Translation result: '" + translatedValue + "'");
-
-                    if (translatedValue && translatedValue !== baseValue) {
-                        console.log("✓ Translation succeeded (differs from English)");
-                        comment = "Translated by Stringsanity";
-                    } else if (!translatedValue) {
-                        console.log("✗ Translation API returned null/empty");
-                        translatedValue = baseValue;
-                    } else {
-                        console.log("✓ Translation matches English value (universal term, no translation needed)");
-                        comment = "Translated by Stringsanity";
-                        translatedValue = baseValue;
-                    }
-                } else {
-                    console.log("Adding English value: '" + baseValue + "'");
-                }
-                
-                // Add the translated or English value
-                if (noComment) {
-                    langData[key] = { text: translatedValue };
-                } else {
-                    langData[key] = {
-                        text: translatedValue,
-                        comment: comment
-                    };
-                }
-                addedStringCount += 1;
+                missing.push({ key: key, text: baseValue, context: originalComment });
             }
 
-            // Always sort and rewrite the file to ensure alphabetical order
-            let sortedLangData = {};
-            Object.keys(langData).sort().forEach(key => {
-                sortedLangData[key] = langData[key];
-            });
-            
-            if (addedStringCount > 0) {
-                console.log("Added " + addedStringCount + " untranslated strings for language " + language + " (" + stringsFilename + ")");
-                totalAddedStrings += addedStringCount;
-            }
-
-            // Write the sorted file (always rewrite to maintain alphabetical order)
-            i18nStringsFiles.writeFileSync(langStringsPath, sortedLangData, { 'encoding': 'UTF-8', 'wantsComments': true });
-
-            let updatedLangKeys = Object.keys(langData);
-            if (updatedLangKeys.length == baseKeys.length) {
-                console.log("✓ Language " + language + " now has all " + baseKeys.length + " strings in " + stringsFilename);
-            } else if (updatedLangKeys.length > baseKeys.length) {
-                console.log("WARNING: ⚠️ language " + language + " has " + updatedLangKeys.length + "/" + baseKeys.length + " strings in " + stringsFilename + " (" + extraStringCount + " extra)");
-            } else {
-                console.log("WARNING: ⚠️ language " + language + " has " + updatedLangKeys.length + "/" + baseKeys.length + " strings in " + stringsFilename + " (missing " + (baseKeys.length - updatedLangKeys.length) + ")");
-            }
-
-            processedLanguages.add(language);
-            processedCount += 1;
+            jobs.push({ language, stringsFilename, langStringsPath, langData, baseKeys, extraStringCount: extraKeys.length, missing });
         }
+    }
+
+    // Pass 2: translate all pairs concurrently, then write each file when its translations are complete
+    console.log("");
+    printDottedLine();
+    await Promise.all(jobs.map(async job => {
+        let translations = new Map();
+        if (translate && job.missing.length > 0) {
+            translations = await translateMany(job.missing, getLanguageName(job.language), {
+                platformHint: "For iOS/mobile app strings, maintain technical accuracy and appropriate length for UI elements.",
+                appContext: appContext,
+                label: job.language + " " + job.stringsFilename
+            });
+        }
+        if (isStopped()) { return }
+        totalAddedStrings += writeJob(job, translations);
+        processedLanguages.add(job.language);
+        processedCount += 1;
+    }));
+
+    function writeJob(job, translations) {
+        let { language, stringsFilename, langStringsPath, langData, baseKeys, extraStringCount } = job;
+        console.log("");
+        console.log("Writing " + language + " " + stringsFilename);
+
+        for (let { key, text: baseValue } of job.missing) {
+            let translatedValue = baseValue;
+            let comment = "UNTRANSLATED";
+
+            if (translate) {
+                let result = translations.get(key);
+                if (result && result !== baseValue) {
+                    console.log("✓ " + key + ": '" + result + "'");
+                    translatedValue = result;
+                    comment = "Translated by Stringsanity";
+                } else if (!result) {
+                    console.log("✗ " + key + ": no translation returned, using English");
+                } else {
+                    console.log("✓ " + key + ": matches English value (universal term, no translation needed)");
+                    comment = "Translated by Stringsanity";
+                }
+            } else {
+                console.log("Adding English value for " + key + ": '" + baseValue + "'");
+            }
+
+            // Add the translated or English value
+            if (noComment) {
+                langData[key] = { text: translatedValue };
+            } else {
+                langData[key] = {
+                    text: translatedValue,
+                    comment: comment
+                };
+            }
+        }
+
+        // Always sort and rewrite the file to ensure alphabetical order
+        let sortedLangData = {};
+        Object.keys(langData).sort().forEach(key => {
+            sortedLangData[key] = langData[key];
+        });
+
+        let addedStringCount = job.missing.length;
+        if (addedStringCount > 0) {
+            console.log("Added " + addedStringCount + " strings for language " + language + " (" + stringsFilename + ")");
+        }
+
+        // Write the sorted file (always rewrite to maintain alphabetical order)
+        i18nStringsFiles.writeFileSync(langStringsPath, sortedLangData, { 'encoding': 'UTF-8', 'wantsComments': true });
+
+        let updatedLangKeys = Object.keys(langData);
+        if (updatedLangKeys.length == baseKeys.length) {
+            console.log("✓ Language " + language + " now has all " + baseKeys.length + " strings in " + stringsFilename);
+        } else if (updatedLangKeys.length > baseKeys.length) {
+            console.log("WARNING: ⚠️ language " + language + " has " + updatedLangKeys.length + "/" + baseKeys.length + " strings in " + stringsFilename + " (" + extraStringCount + " extra)");
+        } else {
+            console.log("WARNING: ⚠️ language " + language + " has " + updatedLangKeys.length + "/" + baseKeys.length + " strings in " + stringsFilename + " (missing " + (baseKeys.length - updatedLangKeys.length) + ")");
+        }
+        return addedStringCount;
     }
 
     console.log("")
@@ -349,45 +355,6 @@ function getLanguageName(code) {
     };
     
     return languageMap[code] || code;
-}
-
-async function translateText(text, targetLanguage, apiKey, context, appContext) {
-    const openai = new OpenAI({ apiKey: apiKey });
-
-    try {
-        let systemPrompt = `You are a professional translator. Translate the given text to ${targetLanguage}. Keep the same tone, style, and formatting. For iOS/mobile app strings, maintain technical accuracy and appropriate length for UI elements. Return only the translated text, nothing else.`;
-        if (appContext) {
-            systemPrompt += `\n\nNotes about this app:\n${appContext}`;
-        }
-
-        let userContent = text;
-        if (context && context.trim().length > 0) {
-            userContent = `Context: ${context}\n\nText to translate: ${text}`;
-        }
-
-        const response = await openai.chat.completions.create({
-            model: "gpt-6.1-sol",
-            messages: [
-                {
-                    role: "system",
-                    content: systemPrompt
-                },
-                {
-                    role: "user",
-                    content: userContent
-                }
-            ],
-            max_completion_tokens: 500,
-        });
-
-        // Keep the source's leading/trailing whitespace (e.g. "Tip: " is followed by more text)
-        let leading = text.match(/^\s*/)[0];
-        let trailing = text.match(/\s*$/)[0];
-        return leading + response.choices[0].message.content.trim() + trailing;
-    } catch (error) {
-        // Stop the whole run: falling back to English would write a file full of UNTRANSLATED entries
-        throw new Error("Translation failed: " + error.message);
-    }
 }
 
 function printDottedLine() {

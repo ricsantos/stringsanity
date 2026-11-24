@@ -2,14 +2,14 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const OpenAI = require('openai');
+const { translateMany, isStopped } = require('./translate');
 
 const [,, ...args] = process.argv;
 
 run(args).catch(error => {
     console.log("");
     console.log("✗ " + error.message);
-    console.log("Stopped. The file in progress was not written. Fix the problem and run again.");
+    console.log("Stopped. Files still waiting for translations were not written. Fix the problem and run again.");
     process.exitCode = 1;
 });
 
@@ -143,6 +143,9 @@ async function run(args) {
     let processedCount = 0;
     let totalAddedStrings = 0;
 
+    // Pass 1: read every (language, namespace) file and list its missing keys
+    let jobs = [];
+    let languageStats = [];
     for (let language of localeEntries) {
         if (languageFilter && language !== languageFilter) continue;
 
@@ -150,8 +153,8 @@ async function run(args) {
         console.log("Processing language: " + language);
 
         let langDir = path.join(localesDir, language);
-        let perLangAdded = 0;
-        let perLangExtra = 0;
+        let stats = { language, added: 0, extra: 0 };
+        languageStats.push(stats);
 
         for (let namespace of namespaces) {
             let basePath = path.join(baseDir, namespace + '.json');
@@ -196,78 +199,102 @@ async function run(args) {
                 } else {
                     console.log("  Use --remove-extra to remove these keys");
                 }
-                perLangExtra += extraKeys.length;
+                stats.extra += extraKeys.length;
             }
 
-            // Build output in base order, filling missing keys
-            let outFlat = {};
-            let nsAdded = 0;
-
+            let missing = [];
             for (let key of baseKeys) {
                 let existing = langFlat[key];
-                if (existing != null && existing !== '') {
-                    outFlat[key] = existing;
-                    continue;
-                }
-
-                let baseValue = baseFlat[key];
+                if (existing != null && existing !== '') continue;
                 console.log("  [" + namespace + "] Missing translation for key: " + key);
+                missing.push({ key: key, text: baseFlat[key], context: key });
+            }
 
-                let translatedValue = baseValue;
+            jobs.push({ language, namespace, langDir, langPath, baseFlat, langFlat, baseKeys, extraKeys, missing, stats });
+        }
+    }
 
-                if (translate) {
-                    let fullLanguageName = getLanguageName(language);
-                    console.log("    Translating '" + baseValue + "' to " + fullLanguageName + " (" + language + ")...");
-                    let result = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY, key);
+    // Pass 2: translate all files concurrently, then write each file when its translations are complete
+    console.log("");
+    printDottedLine();
+    await Promise.all(jobs.map(async job => {
+        let translations = new Map();
+        if (translate && job.missing.length > 0) {
+            translations = await translateMany(job.missing, getLanguageName(job.language), {
+                platformHint: "For mobile/web app strings, maintain technical accuracy and appropriate length for UI elements. Preserve any i18next placeholders such as {{name}} and ICU plural/select syntax exactly. The context is the i18next key path.",
+                label: job.language + " " + job.namespace
+            });
+        }
+        if (isStopped()) return;
+        writeJob(job, translations);
+    }));
 
-                    if (result && result !== baseValue) {
-                        console.log("    ✓ Translation succeeded");
-                        translatedValue = result;
-                    } else if (!result) {
-                        console.log("    ✗ Translation API returned null/empty — using English");
-                        translatedValue = baseValue;
-                    } else {
-                        console.log("    ✓ Translation matches English value (universal term, no translation needed)");
-                        translatedValue = baseValue;
-                    }
+    function writeJob(job, translations) {
+        let { language, namespace, langDir, langPath, langFlat, baseKeys, extraKeys, stats } = job;
+        console.log("");
+        console.log("Writing " + language + " [" + namespace + "]");
+
+        // Build output in base order, filling missing keys
+        let outFlat = {};
+        for (let key of baseKeys) {
+            let existing = langFlat[key];
+            if (existing != null && existing !== '') {
+                outFlat[key] = existing;
+                continue;
+            }
+
+            let baseValue = job.baseFlat[key];
+            let translatedValue = baseValue;
+
+            if (translate) {
+                let result = translations.get(key);
+                if (result && result !== baseValue) {
+                    console.log("    ✓ " + key + ": '" + result + "'");
+                    translatedValue = result;
+                } else if (!result) {
+                    console.log("    ✗ " + key + ": no translation returned, using English");
                 } else {
-                    console.log("    Adding English value: '" + baseValue + "'");
+                    console.log("    ✓ " + key + ": matches English value (universal term, no translation needed)");
                 }
-
-                outFlat[key] = translatedValue;
-                nsAdded += 1;
+            } else {
+                console.log("    Adding English value for " + key + ": '" + baseValue + "'");
             }
 
-            // Carry forward extras unless removing
-            if (!removeExtra) {
-                for (let k of extraKeys) {
-                    outFlat[k] = langFlat[k];
-                }
-            }
+            outFlat[key] = translatedValue;
+        }
 
-            let nested = unflatten(outFlat);
-            fs.mkdirSync(langDir, { recursive: true });
-            fs.writeFileSync(langPath, JSON.stringify(nested, null, 2) + '\n', 'utf-8');
-
-            if (nsAdded > 0) {
-                console.log("  [" + namespace + "] Added " + nsAdded + " keys");
-                perLangAdded += nsAdded;
-            }
-
-            let finalCount = Object.keys(flatten(nested)).length;
-            let removedNote = removeExtra ? "" : (extraKeys.length > 0 ? " (kept " + extraKeys.length + " extra)" : "");
-            if (finalCount === baseKeys.length + (removeExtra ? 0 : extraKeys.length)) {
-                console.log("  [" + namespace + "] ✓ " + finalCount + " keys total" + removedNote);
+        // Carry forward extras unless removing
+        if (!removeExtra) {
+            for (let k of extraKeys) {
+                outFlat[k] = langFlat[k];
             }
         }
 
-        totalAddedStrings += perLangAdded;
-        if (perLangAdded === 0 && perLangExtra === 0) {
-            console.log("  ✓ Language " + language + " already in sync across all namespaces");
+        let nested = unflatten(outFlat);
+        fs.mkdirSync(langDir, { recursive: true });
+        fs.writeFileSync(langPath, JSON.stringify(nested, null, 2) + '\n', 'utf-8');
+
+        let nsAdded = job.missing.length;
+        if (nsAdded > 0) {
+            console.log("  [" + namespace + "] Added " + nsAdded + " keys");
+            stats.added += nsAdded;
+        }
+
+        let finalCount = Object.keys(flatten(nested)).length;
+        let removedNote = removeExtra ? "" : (extraKeys.length > 0 ? " (kept " + extraKeys.length + " extra)" : "");
+        if (finalCount === baseKeys.length + (removeExtra ? 0 : extraKeys.length)) {
+            console.log("  [" + namespace + "] ✓ " + finalCount + " keys total" + removedNote);
+        }
+    }
+
+    console.log("");
+    for (let stats of languageStats) {
+        totalAddedStrings += stats.added;
+        if (stats.added === 0 && stats.extra === 0) {
+            console.log("  ✓ Language " + stats.language + " already in sync across all namespaces");
         } else {
-            console.log("  → Added " + perLangAdded + ", " + (removeExtra ? "removed " : "found ") + perLangExtra + " extra");
+            console.log("  → " + stats.language + ": added " + stats.added + ", " + (removeExtra ? "removed " : "found ") + stats.extra + " extra");
         }
-
         processedCount += 1;
     }
 
@@ -387,33 +414,6 @@ function getLanguageName(code) {
     if (languageMap[code]) return languageMap[code];
     const base = code.split('-')[0];
     return languageMap[base] || code;
-}
-
-async function translateText(text, targetLanguage, apiKey, context) {
-    const openai = new OpenAI({ apiKey });
-
-    try {
-        let systemPrompt = `You are a professional translator. Translate the given text to ${targetLanguage}. Keep the same tone, style, and formatting. For mobile/web app strings, maintain technical accuracy and appropriate length for UI elements. Preserve any i18next placeholders such as {{name}} and ICU plural/select syntax exactly. Return only the translated text, nothing else.`;
-
-        let userContent = text;
-        if (context && context.trim().length > 0) {
-            userContent = `Key path (for context): ${context}\n\nText to translate: ${text}`;
-        }
-
-        const response = await openai.chat.completions.create({
-            model: "gpt-6.1-sol",
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userContent }
-            ],
-            max_completion_tokens: 500,
-        });
-
-        return response.choices[0].message.content.trim();
-    } catch (error) {
-        // Stop the whole run: falling back to English would write a file full of UNTRANSLATED entries
-        throw new Error("Translation failed: " + error.message);
-    }
 }
 
 function printDottedLine() {

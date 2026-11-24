@@ -83,7 +83,7 @@ Extra flags:
 Output:
 - Without `--translate`: missing strings are marked `/* UNTRANSLATED */`.
 - With `--translate`: translated strings are marked `/* Translated by Stringsanity */`.
-- With `--translate`: if an OpenAI call fails (bad API key, quota, network), the run stops before it writes the file in progress. It does not fall back to English.
+- With `--translate`: if an OpenAI call fails (bad API key, quota, network), the run stops. Files that were still waiting for translations are not written; files written earlier in the run are complete. It does not fall back to English.
 - All files are sorted alphabetically.
 
 ---
@@ -172,6 +172,7 @@ Behavior notes:
 
 **AI-Powered Translation** (`--translate`)
 - Uses the OpenAI API to translate missing entries.
+- Sends up to 40 strings per request and runs up to 8 requests at once, across all languages and files.
 - Preserves placeholders, escapes, and platform-specific quirks.
 - Supports 30+ languages including English variants, Arabic, Chinese (Simplified/Traditional), Japanese, Korean, German, Spanish (ES/MX), French (FR/CA), Portuguese (PT/BR), and more.
 

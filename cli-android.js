@@ -2,14 +2,14 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const OpenAI = require('openai');
+const { translateMany, isStopped } = require('./translate');
 
 const [,, ...args] = process.argv;
 
 run(args).catch(error => {
     console.log("");
     console.log("✗ " + error.message);
-    console.log("Stopped. The file in progress was not written. Fix the problem and run again.");
+    console.log("Stopped. Files still waiting for translations were not written. Fix the problem and run again.");
     process.exitCode = 1;
 });
 
@@ -89,6 +89,8 @@ async function run(args) {
     let processedCount = 0;
     let totalAddedStrings = 0;
 
+    // Pass 1: read every language file and list its missing keys
+    let jobs = [];
     for (let langDir of langDirs) {
         let langCode = langDir.replace('values-', '');
         if (languageFilter && langCode !== languageFilter) continue;
@@ -106,16 +108,12 @@ async function run(args) {
         let langStrings = parseStringsXml(langContent);
         let langKeys = Object.keys(langStrings);
 
-        let addedStringCount = 0;
-        let extraStringCount = 0;
-
         // Check for extra strings not present in base
         let extraKeys = langKeys.filter(k => !baseKeys.includes(k));
         if (extraKeys.length > 0) {
             console.log("Found " + extraKeys.length + " extra strings not in base language:");
             extraKeys.forEach(key => {
                 console.log("  - " + key);
-                extraStringCount++;
             });
 
             if (removeExtra) {
@@ -128,40 +126,59 @@ async function run(args) {
             }
         }
 
-        // Find and handle missing strings
-        let stringsToAdd = [];
+        let missing = [];
         for (let key of baseKeys) {
             if (langStrings[key] != null) continue;
-
             console.log("Missing translation for key: " + key);
+            missing.push({ key: key, text: baseStrings[key] });
+        }
 
-            let baseValue = baseStrings[key];
+        jobs.push({ langCode, langStringsPath, langContent, extraStringCount: extraKeys.length, missing });
+    }
+
+    // Pass 2: translate all languages concurrently, then write each file when its translations are complete
+    console.log("");
+    printDottedLine();
+    await Promise.all(jobs.map(async job => {
+        let translations = new Map();
+        if (translate && job.missing.length > 0) {
+            translations = await translateMany(job.missing, getLanguageName(androidLangCodeToIso(job.langCode)), {
+                platformHint: "For Android app strings, maintain technical accuracy and appropriate length for UI elements.",
+                label: job.langCode
+            });
+        }
+        if (isStopped()) return;
+        totalAddedStrings += writeJob(job, translations);
+        processedCount++;
+    }));
+
+    function writeJob(job, translations) {
+        let { langCode, langStringsPath, langContent, extraStringCount } = job;
+        console.log("");
+        console.log("Writing language: " + langCode);
+
+        let stringsToAdd = [];
+        for (let { key, text: baseValue } of job.missing) {
             let translatedValue = baseValue;
             let comment = "UNTRANSLATED";
 
             if (translate) {
-                let isoCode = androidLangCodeToIso(langCode);
-                let fullLanguageName = getLanguageName(isoCode);
-                console.log("Translating '" + baseValue + "' to " + fullLanguageName + " (" + langCode + ")...");
-                translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY);
-
-                if (translatedValue && translatedValue !== baseValue) {
-                    console.log("✓ Translation succeeded (differs from English)");
+                let result = translations.get(key);
+                if (result && result !== baseValue) {
+                    console.log("✓ " + key + ": '" + result + "'");
+                    translatedValue = result;
                     comment = "Translated by Stringsanity";
-                } else if (!translatedValue) {
-                    console.log("✗ Translation API returned null/empty");
-                    translatedValue = baseValue;
+                } else if (!result) {
+                    console.log("✗ " + key + ": no translation returned, using English");
                 } else {
-                    console.log("✓ Translation matches English value (universal term, no translation needed)");
+                    console.log("✓ " + key + ": matches English value (universal term, no translation needed)");
                     comment = "Translated by Stringsanity";
-                    translatedValue = baseValue;
                 }
             } else {
-                console.log("Adding English value: '" + baseValue + "'");
+                console.log("Adding English value for " + key + ": '" + baseValue + "'");
             }
 
             stringsToAdd.push({ name: key, value: translatedValue, comment });
-            addedStringCount++;
         }
 
         if (stringsToAdd.length > 0) {
@@ -170,9 +187,9 @@ async function run(args) {
 
         fs.writeFileSync(langStringsPath, langContent, 'utf-8');
 
+        let addedStringCount = stringsToAdd.length;
         if (addedStringCount > 0) {
             console.log("Added " + addedStringCount + " strings for language " + langCode);
-            totalAddedStrings += addedStringCount;
         }
 
         let updatedCount = Object.keys(parseStringsXml(langContent)).length;
@@ -183,8 +200,7 @@ async function run(args) {
         } else {
             console.log("WARNING: ⚠️ language " + langCode + " has " + updatedCount + "/" + baseKeys.length + " strings (missing " + (baseKeys.length - updatedCount) + ")");
         }
-
-        processedCount++;
+        return addedStringCount;
     }
 
     console.log("")
@@ -302,32 +318,6 @@ function getLanguageName(code) {
     };
 
     return languageMap[code] || code;
-}
-
-async function translateText(text, targetLanguage, apiKey) {
-    const openai = new OpenAI({ apiKey });
-
-    try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-6.1-sol",
-            messages: [
-                {
-                    role: "system",
-                    content: `You are a professional translator. Translate the given text to ${targetLanguage}. Keep the same tone, style, and formatting. For Android app strings, maintain technical accuracy and appropriate length for UI elements. Return only the translated text, nothing else.`
-                },
-                {
-                    role: "user",
-                    content: text
-                }
-            ],
-            max_completion_tokens: 500,
-        });
-
-        return response.choices[0].message.content.trim();
-    } catch (error) {
-        // Stop the whole run: falling back to English would write a file full of UNTRANSLATED entries
-        throw new Error("Translation failed: " + error.message);
-    }
 }
 
 function printDottedLine() {

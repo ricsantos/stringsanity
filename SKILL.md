@@ -63,11 +63,11 @@ export OPENAI_API_KEY=sk-...
 
 ## Behavior notes
 
-- Translation model is `gpt-6.1-sol`; uses `max_completion_tokens` (not `max_tokens`).
+- Translation model is `gpt-6.1-sol`; uses `max_completion_tokens` (not `max_tokens`). The shared `translate.js` sends up to 40 strings per request with a JSON schema reply and runs up to 8 requests at once, so all languages translate in parallel.
 - iOS output is sorted alphabetically. Android keeps the existing file order and appends new entries (in key order) just before `</resources>`. React preserves the base file's **insertion order** so nested groups stay readable.
 - React translator preserves i18next placeholders (`{{name}}`) and ICU plural/select syntax verbatim, and passes region-aware language hints (e.g. `en-US` vs `en-GB`, `zh-Hans` vs `zh-Hant`).
 - Android skips strings marked `translatable="false"`.
-- With `--translate`, the first OpenAI error (bad key, quota, network) stops the run and exits 1. The file in progress is not written; files finished earlier in the run keep their successful translations.
+- With `--translate`, the first OpenAI error (bad key, quota, network) stops the run and exits 1. Files still waiting for translations are not written; files written earlier in the run are complete.
 - iOS marks new entries with `/* UNTRANSLATED */` or `/* Translated by Stringsanity */` unless `--no-comment` is passed. JSON has no comments, so React reports status to stdout only.
 
 ## Guardrails
