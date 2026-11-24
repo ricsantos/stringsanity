@@ -38,6 +38,7 @@ If ambiguous, ask before running.
 
 **`cli-ios.js`**
 - `--no-comment` — skip the `/* UNTRANSLATED */` / `/* Translated by Stringsanity */` markers on newly added entries.
+- `--context <file>` — add app-wide translator notes (app description, do-not-translate terms, glossary) to every translation prompt.
 
 **`cli-react.js`**
 - `--base-language <code>` — override default base of `en-US` (e.g. `en-GB`).
@@ -62,8 +63,8 @@ export OPENAI_API_KEY=sk-...
 
 ## Behavior notes
 
-- Translation model is `gpt-5.4`; uses `max_completion_tokens` (not `max_tokens`).
-- iOS/Android output is sorted alphabetically. React preserves the base file's **insertion order** so nested groups stay readable.
+- Translation model is `gpt-6.1-sol`; uses `max_completion_tokens` (not `max_tokens`).
+- iOS output is sorted alphabetically. Android keeps the existing file order and appends new entries (in key order) just before `</resources>`. React preserves the base file's **insertion order** so nested groups stay readable.
 - React translator preserves i18next placeholders (`{{name}}`) and ICU plural/select syntax verbatim, and passes region-aware language hints (e.g. `en-US` vs `en-GB`, `zh-Hans` vs `zh-Hant`).
 - Android skips strings marked `translatable="false"`.
 - iOS marks new entries with `/* UNTRANSLATED */` or `/* Translated by Stringsanity */` unless `--no-comment` is passed. JSON has no comments, so React reports status to stdout only.

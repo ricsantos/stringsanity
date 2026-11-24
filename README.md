@@ -76,7 +76,9 @@ export OPENAI_API_KEY=your-api-key
 ./cli-ios.js ../ios-app/Resources --translate --language fr
 ```
 
-Extra flag: `--no-comment` skips the `/* UNTRANSLATED */` / `/* Translated by Stringsanity */` comments on new entries.
+Extra flags:
+- `--no-comment` skips the `/* UNTRANSLATED */` / `/* Translated by Stringsanity */` comments on new entries.
+- `--context <file>` adds app-wide translator notes (what the app does, do-not-translate terms, glossary) to every translation prompt.
 
 Output:
 - Without `--translate`: missing strings are marked `/* UNTRANSLATED */`.

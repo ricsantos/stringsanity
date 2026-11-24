@@ -304,7 +304,7 @@ async function translateText(text, targetLanguage, apiKey) {
 
     try {
         const response = await openai.chat.completions.create({
-            model: "gpt-5.4",
+            model: "gpt-6.1-sol",
             messages: [
                 {
                     role: "system",
@@ -316,7 +316,6 @@ async function translateText(text, targetLanguage, apiKey) {
                 }
             ],
             max_completion_tokens: 500,
-            temperature: 0.3
         });
 
         return response.choices[0].message.content.trim();

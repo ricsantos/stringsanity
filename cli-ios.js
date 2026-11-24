@@ -19,17 +19,19 @@ async function run(args) {
     console.log("")
 
     if (args.length < 1) {
-        console.log("Usage: ./cli-ios.js <project-strings-directory> [--remove-extra] [--translate] [--language <code>] [--no-comment]");
+        console.log("Usage: ./cli-ios.js <project-strings-directory> [--remove-extra] [--translate] [--language <code>] [--no-comment] [--context <file>]");
         console.log("Example: ./cli-ios.js ../ios-app/Resources");
         console.log("         ./cli-ios.js ../ios-app/Resources --remove-extra");
         console.log("         ./cli-ios.js ../ios-app/Resources --translate");
         console.log("         ./cli-ios.js ../ios-app/Resources --remove-extra --translate");
         console.log("         ./cli-ios.js ../ios-app/Resources --translate --language fr");
         console.log("         ./cli-ios.js ../ios-app/Resources --translate --no-comment");
+        console.log("         ./cli-ios.js ../ios-app/Resources --translate --context translator-notes.md");
         console.log("");
         console.log("--translate requires OPENAI_API_KEY environment variable");
         console.log("--language <code> restricts processing to a single .lproj (e.g. fr, de, zh-Hans)");
         console.log("--no-comment skips writing 'UNTRANSLATED' / 'Translated by Stringsanity' comments on new entries");
+        console.log("--context <file> adds app-wide translator notes (glossary, do-not-translate terms) to every translation");
         return;
     }
 
@@ -43,6 +45,13 @@ async function run(args) {
         console.log("Error: --language requires a language code (e.g. --language fr)");
         return;
     }
+    let contextIndex = args.indexOf('--context');
+    let contextFile = contextIndex >= 0 ? args[contextIndex + 1] : null;
+    if (contextIndex >= 0 && !contextFile) {
+        console.log("Error: --context requires a file path (e.g. --context translator-notes.md)");
+        return;
+    }
+    let appContext = contextFile ? fs.readFileSync(contextFile, 'utf8').trim() : null;
 
     console.log("Project strings directory: " + projectDir);
     if (removeExtra) {
@@ -57,6 +66,10 @@ async function run(args) {
 
     if (noComment) {
         console.log("Comments: Disabled (no comments will be written for new entries)");
+    }
+
+    if (appContext) {
+        console.log("Context: " + contextFile + " (" + appContext.length + " chars)");
     }
 
     if (translate) {
@@ -196,7 +209,7 @@ async function run(args) {
                 if (translate) {
                     let fullLanguageName = getLanguageName(language);
                     console.log("Translating '" + baseValue + "' to " + fullLanguageName + " (" + language + ")...");
-                    translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY, originalComment);
+                    translatedValue = await translateText(baseValue, fullLanguageName, process.env.OPENAI_API_KEY, originalComment, appContext);
 
                     console.log("Translation result: '" + translatedValue + "'");
 
@@ -286,6 +299,7 @@ function normalizeKey(key) {
 function getLanguageName(code) {
     const languageMap = {
         'ar': 'Arabic',
+        'az': 'Azerbaijani',
         'bg': 'Bulgarian', 
         'ca': 'Catalan',
         'cs': 'Czech',
@@ -294,6 +308,7 @@ function getLanguageName(code) {
         'el': 'Greek',
         'en': 'English',
         'es': 'Spanish',
+        'es-419': 'Spanish (Latin America)',
         'fi': 'Finnish',
         'fr': 'French',
         'he': 'Hebrew',
@@ -303,7 +318,9 @@ function getLanguageName(code) {
         'id': 'Indonesian',
         'it': 'Italian',
         'ja': 'Japanese',
+        'kk': 'Kazakh',
         'ko': 'Korean',
+        'lt': 'Lithuanian',
         'ms': 'Malay',
         'nb': 'Norwegian Bokmål',
         'nl': 'Dutch',
@@ -311,9 +328,11 @@ function getLanguageName(code) {
         'pl': 'Polish',
         'pt': 'Portuguese',
         'pt-BR': 'Portuguese (Brazil)',
+        'pt-PT': 'Portuguese (Portugal)',
         'ro': 'Romanian',
         'ru': 'Russian',
         'sk': 'Slovak',
+        'sl': 'Slovenian',
         'sv': 'Swedish',
         'th': 'Thai',
         'tr': 'Turkish',
@@ -327,11 +346,14 @@ function getLanguageName(code) {
     return languageMap[code] || code;
 }
 
-async function translateText(text, targetLanguage, apiKey, context) {
+async function translateText(text, targetLanguage, apiKey, context, appContext) {
     const openai = new OpenAI({ apiKey: apiKey });
 
     try {
         let systemPrompt = `You are a professional translator. Translate the given text to ${targetLanguage}. Keep the same tone, style, and formatting. For iOS/mobile app strings, maintain technical accuracy and appropriate length for UI elements. Return only the translated text, nothing else.`;
+        if (appContext) {
+            systemPrompt += `\n\nNotes about this app:\n${appContext}`;
+        }
 
         let userContent = text;
         if (context && context.trim().length > 0) {
@@ -339,7 +361,7 @@ async function translateText(text, targetLanguage, apiKey, context) {
         }
 
         const response = await openai.chat.completions.create({
-            model: "gpt-5.4",
+            model: "gpt-6.1-sol",
             messages: [
                 {
                     role: "system",
@@ -351,10 +373,12 @@ async function translateText(text, targetLanguage, apiKey, context) {
                 }
             ],
             max_completion_tokens: 500,
-            temperature: 0.3
         });
 
-        return response.choices[0].message.content.trim();
+        // Keep the source's leading/trailing whitespace (e.g. "Tip: " is followed by more text)
+        let leading = text.match(/^\s*/)[0];
+        let trailing = text.match(/\s*$/)[0];
+        return leading + response.choices[0].message.content.trim() + trailing;
     } catch (error) {
         console.log("Translation error:", error.message);
         return null;
